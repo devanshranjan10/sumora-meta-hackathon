@@ -1,0 +1,22 @@
+[project]
+name = "sumora-muse"
+version = "0.1.0"
+description = "Sumora's Meta Model API layer: Muse Spark agent routing, approval-gated tool use, Muse Image, Muse Voice Transcribe"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["httpx>=0.27"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["sumora_muse"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
