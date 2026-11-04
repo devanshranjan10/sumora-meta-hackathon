@@ -155,3 +155,28 @@ def test_read_menu_photo_sends_image_to_vision_role_and_parses_catalogue():
 
     out = read_menu_photo(Router(make_client(handler)), b"\xff\xd8fakejpeg")
     assert out.summary() == "2 items · ₹240–₹1,800 · 11am-8pm, closed Monday"
+
+
+def test_segment_parses_sam_box_tokens():
+    text = ("<0f>0<|box;x1=10;y1=20;x2=30;y2=40;w=960;h=640|><|mask;x=0;y=0;data=abc|>"
+            "<|box;x1=100;y1=120;x2=130;y2=160;w=960;h=640|><|mask;x=0;y=0;data=def|>")
+
+    def handler(req):
+        body = json.loads(req.content)
+        assert req.url.path.endswith("/responses") and body["model"] == "sam-3.1"
+        kinds = [p["type"] for p in body["input"][0]["content"]]
+        assert kinds == ["input_text", "input_image"]
+        return httpx.Response(200, json={"output": [{"type": "message", "content": [{"type": "output_text", "text": text}]}]})
+
+    boxes = make_client(handler).segment(b"\xff\xd8x", "hole")
+    assert boxes == [{"x1": 10, "y1": 20, "x2": 30, "y2": 40, "w": 960, "h": 640},
+                     {"x1": 100, "y1": 120, "x2": 130, "y2": 160, "w": 960, "h": 640}]
+
+
+def test_merge_boxes_dedupes_overlapping_sam_proposals():
+    from sumora_muse import merge_boxes
+
+    a = {"x1": 0, "y1": 0, "x2": 100, "y2": 100}
+    a2 = {"x1": 2, "y1": 2, "x2": 98, "y2": 99}
+    b = {"x1": 200, "y1": 0, "x2": 260, "y2": 50}
+    assert merge_boxes([a2, b, a]) == [a, b]

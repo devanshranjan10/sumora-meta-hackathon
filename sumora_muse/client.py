@@ -163,6 +163,41 @@ class MuseClient:
             raise MuseError("image response had no data", body=data)
         return out
 
+    # -- segmentation ----------------------------------------------------------------
+    def segment(self, image: bytes, prompt: str, *, mime: str = "image/jpeg", model: str = "sam-3.1") -> list[dict[str, int]]:
+        """SAM 3.1 open-vocabulary detection via the Responses API.
+
+        Returns one box per match: {x1, y1, x2, y2, w, h} in pixels of the image SAM saw.
+        SAM answers in special-token text (``<|box;x1=..;y1=..;x2=..;y2=..;w=..;h=..|><|mask;...|>``);
+        we keep the boxes, which is what downstream agents need.
+        """
+        import base64
+        import re
+
+        body = {
+            "model": model,
+            "input": [{
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": f"data:{mime};base64,{base64.b64encode(image).decode()}"},
+                ],
+            }],
+        }
+        data = self._request("POST", "/responses", json=body).json()
+        text = "".join(
+            part.get("text", "")
+            for item in data.get("output") or []
+            for part in item.get("content") or []
+            if part.get("type") == "output_text"
+        )
+        boxes = []
+        for raw in re.findall(r"<\|box;([^|]*)\|>", text):
+            fields = dict(kv.split("=", 1) for kv in raw.split(";") if "=" in kv)
+            boxes.append({k: int(float(v)) for k, v in fields.items() if k in {"x1", "y1", "x2", "y2", "w", "h"}})
+        return boxes
+
     # -- voice ---------------------------------------------------------------------
     def transcribe(self, wav: bytes, *, model: str = "muse-voice-transcribe-1.0", mode: str = "PUSH_TO_TALK") -> str:
         """Muse Voice Transcribe on a WAV clip (<= 10 min, <= 32 MB)."""
