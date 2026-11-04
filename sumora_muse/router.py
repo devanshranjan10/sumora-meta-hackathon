@@ -15,11 +15,13 @@ from typing import Any, Callable
 
 from .client import ChatResult, MuseClient, MuseError
 
-ROLES = ("interview", "planner", "command", "agent", "brief")
+ROLES = ("interview", "planner", "vision", "command", "agent", "brief")
 
 DEFAULT_CHAINS: dict[str, list[str]] = {
-    # The planner designs a business's whole agent team: worth the strongest model.
-    "planner": ["muse-spark-1.3", "muse-spark-1.2"],
+    # Planning (team design, build plan, approval-risk reasoning) gets Meta's strongest
+    # model, Muse Wonder; Muse Spark 1.3 carries the high-volume conversational turns.
+    "planner": ["muse-wonder-1.0", "muse-spark-1.3"],
+    "vision": ["muse-wonder-1.0", "muse-spark-1.3"],
     "interview": ["muse-spark-1.3", "muse-spark-1.2"],
     "command": ["muse-spark-1.3", "muse-spark-1.2"],
     "agent": ["muse-spark-1.3", "muse-spark-1.2"],

@@ -136,3 +136,22 @@ def test_transcribe_sends_multipart_request_and_audio():
         return httpx.Response(200, json={"transcript": " move Priya to 6 pm ", "turns": []})
 
     assert make_client(handler).transcribe(b"RIFF....WAVE") == "move Priya to 6 pm"
+
+
+def test_read_menu_photo_sends_image_to_vision_role_and_parses_catalogue():
+    from sumora_muse import read_menu_photo
+
+    cat = {"business_name": "Asha's Home Bakery", "items": [
+        {"name": "Cardamom buns", "price_inr": 240, "unit": "box of 6", "price_is_starting": False},
+        {"name": "Custom theme cake", "price_inr": 1800, "unit": "kg", "price_is_starting": True}],
+        "opening_or_pickup_hours": "11am-8pm", "closed_days": ["Monday"], "area": "Baner, Pune", "payment": ["UPI"], "lead_time_days": 2}
+
+    def handler(req):
+        body = json.loads(req.content)
+        assert body["model"] == "muse-wonder-1.0"
+        part = body["messages"][0]["content"][1]
+        assert part["type"] == "image_url" and part["image_url"]["url"].startswith("data:image/jpeg;base64,")
+        return httpx.Response(200, json=completion(json.dumps(cat), model="muse-wonder-1.0"))
+
+    out = read_menu_photo(Router(make_client(handler)), b"\xff\xd8fakejpeg")
+    assert out.summary() == "2 items · ₹240–₹1,800 · 11am-8pm, closed Monday"

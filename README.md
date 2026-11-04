@@ -20,7 +20,8 @@ This is the open part of Sumora: **the Meta Model API layer** that every Sumora 
 | Module | Meta product | What it does in Sumora |
 |---|---|---|
 | `sumora_muse/client.py` | Meta Model API | Chat, image and voice client. It handles Muse Spark's reasoning budget: if hidden reasoning uses up `max_tokens`, it grows the budget instead of returning an empty answer. It also retries with backoff on 429/5xx. |
-| `sumora_muse/router.py` | **Muse Spark 1.3** | Per-role model chains (planner, interview, command, agent, brief), with fallback only on server or rate-limit errors. Every call is recorded (model, latency, tokens, reasoning tokens) so the product can show which model made each decision. |
+| `sumora_muse/catalog.py` | **Muse Wonder 1.0** (vision + structured output) | The owner photographs the menu or price list. One call turns it into typed catalogue facts: items, prices, "from ₹X" prices, hours, closed days, area, payment, lead time. |
+| `sumora_muse/router.py` | **Muse Wonder 1.0 + Muse Spark 1.3** | Per-role model chains. Planning and vision go to Muse Wonder; high-volume turns (interview, command, agent, brief) go to Muse Spark 1.3. Fallback happens only on server or rate-limit errors. Every call is recorded (model, latency, tokens, reasoning tokens) so the product can show which model made each decision. |
 | `sumora_muse/team.py` | Muse Spark **structured output** | Turns one sentence about a business into a typed agent team: jobs, channels, tools, and the actions that need owner approval. |
 | `sumora_muse/agent.py` | Muse Spark **tool calling** | The agent loop. Safe tools run. Risky tools (refunds, payments, new contacts, publishing) become owner approval requests, and the agent tells the customer honestly that the owner will confirm. |
 | `client.generate_image` | **Muse Image 1.0** | Paints the hero and cover images for each business's website. |
@@ -34,18 +35,26 @@ In production, these agents reach customers and owners through the **WhatsApp Bu
 pip install -e ".[dev]"
 pytest -q                                   # 8 offline tests, no key needed
 export MODEL_API_KEY=...                    # from dev.meta.ai
-python examples/demo.py --voice owner-note.wav
+python examples/demo.py --voice owner-note.wav     # uses examples/menu.jpg
 ```
 
 Real output from the live API (2026-11-04):
 
 ```
-1) Muse Spark designs the team
-   · planner  muse-spark-1.3    25004 ms  ok=True
-   Home bakery in Pune selling custom cakes and cardamom buns via WhatsApp orders with pickup from home.  [Asia/Kolkata]
-   - Asha: WhatsApp order taker … (approval: messaging new contacts, issuing refunds, offering custom discounts)
-   - Ravi: Baking prep and inventory planner … (approval: spending money on ingredients, ordering supplies)
-   - Ira: Instagram and repeat-customer helper … (approval: publishing publicly, messaging new contacts, offering discounts)
+0) Muse Wonder reads the owner's menu photo
+   · vision   muse-wonder-1.0    5900 ms  ok=True
+   Asha's Home Bakery: 4 items · ₹240–₹1,800 · Pickup 11am-8pm, closed Mondays
+   - Cardamom buns (box of 6): ₹240 / box of 6
+   - Chocolate truffle cake: ₹1100 / 1 kg
+   - Eggless vanilla cake: ₹520 / 500 g
+   - Custom theme cake: from ₹1800 / per kg
+
+1) Muse Wonder designs the team
+   · planner  muse-wonder-1.0   13718 ms  ok=True
+   - WhatsApp Order Assistant: … Never accept a pickup on Monday (closed) … (approval: confirming any custom cake order,
+     issuing a refund or discount, first message to a new contact, changing prices or public posts, any payment)
+   - Baking & Pickup Planner: turn confirmed orders into a daily bake and pickup list, track stock …
+     (approval: spending money on ingredients or packaging, refunds, new contacts, publishing)
 
 2) Front Desk agent handles a customer (Muse Spark tool calling)
    tool check_slots({"day": "2026-11-06"}) -> {"free": ["2026-11-06 16:00", "2026-11-06 18:00"]}
@@ -88,7 +97,10 @@ customer ── WhatsApp / website chat ────────┤
 
 Details are in [`docs/architecture.md`](docs/architecture.md).
 
-## Lessons from building on Muse Spark
+## Lessons from building on Muse Spark and Muse Wonder
+
+- **Use the right Muse for each job.** On the same menu photo, Muse Wonder returned clean JSON in about 4–9 s and Muse Spark 1.3 in about 10 s. Wonder plans and reads; Spark talks.
+- **Field names are part of the prompt.** With a strict schema field called `hours`, Wonder missed "Pickup 11am–8pm" in 3 of 5 runs. Renaming the field to `opening_or_pickup_hours` fixed it: 3 of 3.
 
 - **Reasoning tokens count against `max_tokens`.** With a 20-token budget, Muse Spark 1.3 returned `content: null` and `finish_reason: "length"`, having spent all 20 tokens thinking. The client now grows the budget automatically, and agent turns use `reasoning_effort: "low"`.
 - **Strict JSON-schema output was reliable for team design.** It is the backbone of onboarding.

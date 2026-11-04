@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sumora_muse import MuseClient, Router, Tool, plan_team, run_agent  # noqa: E402
+from sumora_muse import MuseClient, Router, Tool, plan_team, read_menu_photo, run_agent  # noqa: E402
 
 CALENDAR: dict[str, str | None] = {"2026-11-06 16:00": None, "2026-11-06 18:00": None}
 
@@ -84,6 +84,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("business", nargs="?", default="I run a home bakery in Pune. Custom cakes and cardamom buns; customers order on WhatsApp and pick up from my home.")
     ap.add_argument("--voice", type=Path, help="owner voice note (WAV) to transcribe")
+    ap.add_argument("--menu", type=Path, default=Path(__file__).with_name("menu.jpg"), help="photo of the menu/price list")
     ap.add_argument("--no-image", action="store_true")
     ap.add_argument("--out", type=Path, default=Path("out"))
     args = ap.parse_args()
@@ -92,8 +93,14 @@ def main() -> None:
     with MuseClient() as client:
         router = Router(client, on_record=lambda r: print(f"   · {r.role:<8} {r.model:<16} {r.latency_ms:>6} ms  ok={r.ok}"))
 
-        print("1) Muse Spark designs the team")
-        team = plan_team(router, args.business)
+        print("0) Muse Wonder reads the owner's menu photo")
+        catalogue = read_menu_photo(router, args.menu.read_bytes())
+        print(f"   {catalogue.business_name or 'business'}: {catalogue.summary()}")
+        for item in catalogue.items:
+            print(f"   - {item['name']}: {'from ' if item['price_is_starting'] else ''}₹{item['price_inr']} / {item['unit']}")
+
+        print("\n1) Muse Wonder designs the team")
+        team = plan_team(router, args.business + f" Catalogue: {catalogue.summary()}.")
         print(f"   {team.business_summary}  [{team.timezone}]")
         for a in team.agents:
             print(f"   - {a.name}: {a.job}  (approval: {', '.join(a.needs_approval_for) or 'none'})")
